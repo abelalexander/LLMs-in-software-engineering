@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createTransactionStore, emptyFilters, filterTransactions, hasActiveFilters, resetFilters } from '../src/app.js';
+import {
+  createTransactionRepository,
+  createTransactionStore,
+  emptyFilters,
+  filterTransactions,
+  hasActiveFilters,
+  resetFilters
+} from '../src/app.js';
 
 const data = [
   { id: 1, date: '2024-01-03', description: 'Coffee Shop', category: 'Food', amount: -4 },
@@ -10,6 +17,18 @@ const data = [
   { id: 5, date: '2023-12-29', description: 'Dinner', category: 'Food', amount: -30 },
   { id: 6, date: '2023-12-28', description: 'Taxi', category: 'Transport', amount: -18 }
 ];
+
+function createMemoryStorage() {
+  const values = new Map();
+  return {
+    getItem(key) {
+      return values.has(key) ? values.get(key) : null;
+    },
+    setItem(key, value) {
+      values.set(key, value);
+    }
+  };
+}
 
 test('filters by keyword, category, and inclusive date range', () => {
   assert.deepEqual(filterTransactions(data, { keyword: 'coffee', category: 'Food', from: '2024-01-01', to: '2024-01-03' }).map((item) => item.id), [1]);
@@ -57,4 +76,61 @@ test('repeated reset does not advance request state', () => {
   const before = store.getState();
   store.reset();
   assert.equal(store.getState().requestId, before.requestId);
+});
+
+test('repository persists history by user and restores it on a new visit', () => {
+  const storage = createMemoryStorage();
+  const firstVisit = createTransactionRepository({ storage, userId: 'user-a', initialTransactions: data });
+  const otherUser = createTransactionRepository({ storage, userId: 'user-b' });
+
+  assert.equal(firstVisit.list().length, data.length);
+  firstVisit.save({ id: 7, date: '2024-01-04', description: 'Lunch', category: 'Food', amount: -15, status: 'posted' });
+
+  const nextVisit = createTransactionRepository({ storage, userId: 'user-a' });
+  assert.equal(nextVisit.list().length, data.length + 1);
+  assert.equal(nextVisit.list()[0].id, 7);
+  assert.deepEqual(otherUser.list(), []);
+});
+
+test('repository upserts repeated transactions and updates supported details', () => {
+  const repository = createTransactionRepository({ storage: createMemoryStorage(), userId: 'user-a', initialTransactions: data });
+  repository.save({ id: 1, date: '2024-01-03', description: 'Coffee Shop', category: 'Food', amount: -4, status: 'pending' });
+  repository.update(1, { status: 'posted' });
+
+  const saved = repository.list().filter((item) => item.id === 1);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].status, 'posted');
+  assert.equal(saved[0].description, 'Coffee Shop');
+});
+
+test('repository paginates in date order and clamps out-of-range pages', () => {
+  const repository = createTransactionRepository({ storage: createMemoryStorage(), userId: 'user-a', initialTransactions: data });
+  const firstPage = repository.getPage(1, 2);
+  const lastPage = repository.getPage(99, 2);
+
+  assert.deepEqual(firstPage.items.map((item) => item.id), [1, 2]);
+  assert.deepEqual(lastPage.items.map((item) => item.id), [5, 6]);
+  assert.equal(lastPage.page, 3);
+  assert.equal(lastPage.pages, 3);
+});
+
+test('repository ignores malformed records and supports removal', () => {
+  const storage = createMemoryStorage();
+  const repository = createTransactionRepository({ storage, userId: 'user-a', initialTransactions: data });
+  repository.save({ id: 7, date: '2024-01-04', description: 'Lunch', category: 'Food', amount: -15 });
+  storage.setItem('transaction-history:user-a', JSON.stringify([...data, { id: 8, amount: 'invalid' }]));
+
+  assert.equal(repository.list().length, data.length);
+  assert.equal(repository.remove(1), true);
+  assert.equal(repository.remove(999), false);
+  assert.equal(repository.list().some((item) => item.id === 1), false);
+});
+
+test('repository rejects invalid transactions and surfaces corrupted storage', () => {
+  const storage = createMemoryStorage();
+  const repository = createTransactionRepository({ storage, userId: 'user-a' });
+  assert.throws(() => repository.save({ id: 1, amount: 'not a number' }), /valid history details/);
+
+  storage.setItem('transaction-history:user-a', '{invalid json');
+  assert.throws(() => repository.list(), /could not be loaded/);
 });
