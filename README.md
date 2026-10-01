@@ -1,1 +1,3 @@
 # LLMs-in-software-engineering
+
+Transaction history is persisted in browser `localStorage`, partitioned by the user ID provided on the page's `<main data-user-id="…">` element. The included `demo-user` value is for this standalone demo only. Browser storage is user-scoped for organization, but it is not an authentication or authorization boundary; a production application must load and secure transaction history through an authenticated server-side API.
