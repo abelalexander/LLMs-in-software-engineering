@@ -1,0 +1,31 @@
+:root { color: #172033; background: #f5f7fb; font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.page-shell { max-width: 980px; margin: 0 auto; padding: 3rem 1.25rem; }
+.eyebrow { color: #5267a5; font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 .5rem; }
+h1, h2 { margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3rem); }
+h2 { font-size: 1.15rem; }
+.subtitle { color: #596579; margin: .5rem 0 2rem; }
+.filters-panel { background: white; border: 1px solid #e1e6ef; border-radius: .75rem; padding: 1.25rem; margin-bottom: 2rem; }
+.filters-heading, .results-heading { align-items: center; display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.filter-grid { display: grid; gap: 1rem; grid-template-columns: repeat(4, 1fr); }
+label { color: #455065; display: grid; font-size: .85rem; font-weight: 600; gap: .4rem; }
+input, select, button { border: 1px solid #c8d0df; border-radius: .4rem; font: inherit; min-height: 2.5rem; padding: .5rem .7rem; }
+input:focus, select:focus, button:focus-visible { outline: 3px solid #aabcf5; outline-offset: 2px; }
+button { background: white; color: #29458d; cursor: pointer; font-weight: 650; }
+button:hover:not(:disabled) { background: #eef2ff; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+.reset-button { border-color: #5267a5; }
+.results-count, .status-message { color: #596579; font-size: .9rem; }
+.table-wrapper { background: white; border: 1px solid #e1e6ef; border-radius: .75rem; overflow-x: auto; }
+table { border-collapse: collapse; min-width: 640px; width: 100%; }
+th, td { padding: .9rem 1rem; text-align: left; }
+th { background: #f8f9fc; color: #596579; font-size: .8rem; text-transform: uppercase; }
+td { border-top: 1px solid #edf0f5; }
+td:last-child { text-align: right; }
+.debit { color: #a23b47; } .credit { color: #14724b; }
+.pagination { align-items: center; display: flex; gap: 1rem; justify-content: center; padding: 1.25rem 0; }
+.pagination span { color: #596579; font-size: .9rem; min-width: 6rem; text-align: center; }
+@media (max-width: 700px) { .page-shell { padding-top: 2rem; } .filter-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 440px) { .filter-grid { grid-template-columns: 1fr; } .filters-heading { align-items: flex-start; flex-direction: column; } }
