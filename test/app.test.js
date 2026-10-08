@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   createTransactionRepository,
   createTransactionStore,
@@ -31,9 +32,14 @@ function createMemoryStorage() {
   };
 }
 
-function createHistoryDocument() {
+function createHistoryDocument(storage = createMemoryStorage()) {
   const selectors = [
     'main',
+    '#transaction-form',
+    '#transaction-date',
+    '#transaction-description',
+    '#transaction-category',
+    '#transaction-amount',
     '#keyword-filter',
     '#category-filter',
     '#from-filter',
@@ -66,7 +72,6 @@ function createHistoryDocument() {
       this.children = children;
     }
   }]));
-  const storage = createMemoryStorage();
   return {
     document: {
       defaultView: { localStorage: storage },
@@ -140,6 +145,83 @@ test('category filter combines with other filters and clear restores all transac
   assert.equal(elements.get('#results-count').textContent, `${data.length} transactions`);
   assert.equal(elements.get('#transaction-list').children.length, 5);
   assert.equal(elements.get('#page-label').textContent, 'Page 1 of 2');
+});
+
+test('transaction history page provides a transaction entry form', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+
+  assert.match(html, /<form\b[^>]*id="transaction-form"/);
+  for (const field of ['date', 'description', 'category', 'amount']) {
+    assert.match(html, new RegExp(`id="transaction-${field}"`));
+  }
+  assert.match(html, /<button\b[^>]*type="submit"/);
+});
+
+test('submitting a valid transaction saves and displays it immediately', () => {
+  const { document, elements, storage } = createHistoryDocument();
+  mountTransactionHistory(document, data);
+  const fields = {
+    '#transaction-date': '2024-01-04',
+    '#transaction-description': 'Lunch',
+    '#transaction-category': 'Food',
+    '#transaction-amount': '-15.5'
+  };
+  Object.entries(fields).forEach(([selector, value]) => {
+    elements.get(selector).value = value;
+  });
+  let prevented = false;
+  const form = elements.get('#transaction-form');
+  assert.equal(typeof form.listeners.submit, 'function');
+  form.listeners.submit({
+    preventDefault() {
+      prevented = true;
+    }
+  });
+
+  const saved = JSON.parse(storage.getItem('transaction-history:test-user'));
+  assert.equal(prevented, true);
+  assert.equal(saved.length, data.length + 1);
+  assert.deepEqual(
+    Object.fromEntries(['date', 'description', 'category'].map((key) => [key, saved[0][key]])),
+    { date: '2024-01-04', description: 'Lunch', category: 'Food' }
+  );
+  assert.equal(saved[0].amount, -15.5);
+  assert.equal(elements.get('#results-count').textContent, `${data.length + 1} transactions`);
+  assert.equal(elements.get('#transaction-list').children[0].children[1].textContent, 'Lunch');
+});
+
+test('new transactions remain visible after the page is reloaded', () => {
+  const storage = createMemoryStorage();
+  const firstPage = createHistoryDocument(storage);
+  mountTransactionHistory(firstPage.document, data);
+  firstPage.elements.get('#transaction-date').value = '2024-01-04';
+  firstPage.elements.get('#transaction-description').value = 'Lunch';
+  firstPage.elements.get('#transaction-category').value = 'Food';
+  firstPage.elements.get('#transaction-amount').value = '-15';
+  const form = firstPage.elements.get('#transaction-form');
+  assert.equal(typeof form.listeners.submit, 'function');
+  form.listeners.submit({ preventDefault() {} });
+
+  const nextPage = createHistoryDocument(storage);
+  mountTransactionHistory(nextPage.document, data);
+  assert.equal(nextPage.elements.get('#results-count').textContent, `${data.length + 1} transactions`);
+  assert.equal(nextPage.elements.get('#transaction-list').children[0].children[1].textContent, 'Lunch');
+});
+
+test('invalid transaction input shows an error and does not save history', () => {
+  const { document, elements, storage } = createHistoryDocument();
+  mountTransactionHistory(document, data);
+  elements.get('#transaction-date').value = '2024-01-04';
+  elements.get('#transaction-description').value = '';
+  elements.get('#transaction-category').value = 'Food';
+  elements.get('#transaction-amount').value = 'not-a-number';
+  const savedBefore = storage.getItem('transaction-history:test-user');
+  const form = elements.get('#transaction-form');
+  assert.equal(typeof form.listeners.submit, 'function');
+  form.listeners.submit({ preventDefault() {} });
+
+  assert.notEqual(elements.get('#status-message').textContent, '');
+  assert.equal(storage.getItem('transaction-history:test-user'), savedBefore);
 });
 
 test('page restores a user history already saved in storage instead of reseeding it', () => {

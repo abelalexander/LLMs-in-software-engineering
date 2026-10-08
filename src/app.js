@@ -320,6 +320,26 @@ export function mountTransactionHistory(document, items = transactions) {
   const previous = document.querySelector('#previous-page');
   const next = document.querySelector('#next-page');
   const retry = document.querySelector('#retry-history');
+  const transactionForm = document.querySelector('#transaction-form');
+  const transactionDate = document.querySelector('#transaction-date');
+  const transactionDescription = document.querySelector('#transaction-description');
+  const transactionCategoryInput = document.querySelector('#transaction-category');
+  const transactionAmount = document.querySelector('#transaction-amount');
+  let transactionIdSequence = 0;
+
+  function populateCategories(history) {
+    category.replaceChildren();
+    const allCategories = document.createElement('option');
+    allCategories.value = '';
+    allCategories.textContent = 'All categories';
+    category.append(allCategories);
+    [...new Set(history.map((item) => item.category))].sort().forEach((value) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      category.append(option);
+    });
+  }
 
   function loadHistory() {
     status.textContent = 'Loading transaction history…';
@@ -332,17 +352,7 @@ export function mountTransactionHistory(document, items = transactions) {
       });
       const history = repository.list();
       store = createTransactionStore(history);
-      category.replaceChildren();
-      const allCategories = document.createElement('option');
-      allCategories.value = '';
-      allCategories.textContent = 'All categories';
-      category.append(allCategories);
-      [...new Set(history.map((item) => item.category))].sort().forEach((value) => {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = value;
-        category.append(option);
-      });
+      populateCategories(history);
       render();
     } catch (error) {
       store = null;
@@ -389,6 +399,49 @@ export function mountTransactionHistory(document, items = transactions) {
     store.setFilters({ keyword: keyword.value, category: category.value, from: from.value, to: to.value });
     render();
   }
+  transactionForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!store || !repository) return;
+
+    const date = transactionDate.value;
+    const description = transactionDescription.value.trim();
+    const transactionCategory = transactionCategoryInput.value.trim();
+    const amountValue = transactionAmount.value.trim();
+    const dateIsValid = /^\d{4}-\d{2}-\d{2}$/.test(date)
+      && !Number.isNaN(Date.parse(date))
+      && new Date(date).toISOString().slice(0, 10) === date;
+    const amount = Number(amountValue);
+    if (!dateIsValid || !description || !transactionCategory || !amountValue || !Number.isFinite(amount)) {
+      status.textContent = 'Enter a valid date, description, category, and amount.';
+      return;
+    }
+
+    try {
+      const existingTransactions = repository.list();
+      let id;
+      do {
+        id = `entry-${Date.now()}-${transactionIdSequence++}`;
+      } while (existingTransactions.some((item) => String(item.id) === id));
+
+      repository.save({ id, date, description, category: transactionCategory, amount });
+      const history = repository.list();
+      store = createTransactionStore(history);
+      keyword.value = '';
+      category.value = '';
+      from.value = '';
+      to.value = '';
+      transactionDate.value = '';
+      transactionDescription.value = '';
+      transactionCategoryInput.value = '';
+      transactionAmount.value = '';
+      populateCategories(history);
+      render();
+    } catch (error) {
+      status.textContent = error instanceof Error
+        ? `Unable to save transaction: ${error.message}`
+        : 'Unable to save transaction.';
+    }
+  });
   [keyword, category, from, to].forEach((control) => control.addEventListener('input', update));
   reset.addEventListener('click', () => {
     if (!store) return;
