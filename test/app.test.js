@@ -6,6 +6,7 @@ import {
   emptyFilters,
   filterTransactions,
   hasActiveFilters,
+  mountTransactionHistory,
   resetFilters
 } from '../src/app.js';
 
@@ -30,9 +31,137 @@ function createMemoryStorage() {
   };
 }
 
+function createHistoryDocument() {
+  const selectors = [
+    'main',
+    '#keyword-filter',
+    '#category-filter',
+    '#from-filter',
+    '#to-filter',
+    '#reset-filters',
+    '#transaction-list',
+    '#results-count',
+    '#status-message',
+    '#page-label',
+    '#previous-page',
+    '#next-page',
+    '#retry-history'
+  ];
+  const elements = new Map(selectors.map((selector) => [selector, {
+    children: [],
+    dataset: selector === 'main' ? { userId: 'test-user' } : {},
+    listeners: {},
+    value: '',
+    append(child) {
+      this.children.push(child);
+    },
+    addEventListener(event, listener) {
+      this.listeners[event] = listener;
+    },
+    click() {
+      this.listeners.click();
+    },
+    focus() {},
+    replaceChildren(...children) {
+      this.children = children;
+    }
+  }]));
+  const storage = createMemoryStorage();
+  return {
+    document: {
+      defaultView: { localStorage: storage },
+      querySelector(selector) {
+        return elements.get(selector);
+      },
+      createElement() {
+        return {
+          children: [],
+          append(child) {
+            this.children.push(child);
+          }
+        };
+      }
+    },
+    elements,
+    storage
+  };
+}
+
 test('filters by keyword, category, and inclusive date range', () => {
   assert.deepEqual(filterTransactions(data, { keyword: 'coffee', category: 'Food', from: '2024-01-01', to: '2024-01-03' }).map((item) => item.id), [1]);
   assert.deepEqual(filterTransactions(data, { ...emptyFilters, category: 'Transport' }).map((item) => item.id), [2, 6]);
+});
+
+test('category control lists unique history categories and filters visible transactions', () => {
+  const { document, elements } = createHistoryDocument();
+  mountTransactionHistory(document, data);
+
+  const category = elements.get('#category-filter');
+  assert.deepEqual(category.children.map((option) => option.textContent), [
+    'All categories',
+    'Food',
+    'Income',
+    'Shopping',
+    'Transport'
+  ]);
+
+  elements.get('#next-page').click();
+  assert.equal(elements.get('#page-label').textContent, 'Page 2 of 2');
+  category.value = 'Food';
+  category.listeners.input();
+
+  assert.equal(elements.get('#results-count').textContent, '2 transactions');
+  assert.deepEqual(elements.get('#transaction-list').children.map((row) => row.children[2].textContent), ['Food', 'Food']);
+  assert.equal(elements.get('#page-label').textContent, 'Page 1 of 1');
+});
+
+test('category filter combines with other filters and clear restores all transactions', () => {
+  const { document, elements } = createHistoryDocument();
+  mountTransactionHistory(document, data);
+
+  const category = elements.get('#category-filter');
+  const keyword = elements.get('#keyword-filter');
+  category.value = 'Food';
+  keyword.value = 'coffee';
+  category.listeners.input();
+  keyword.listeners.input();
+
+  assert.equal(elements.get('#results-count').textContent, '1 transaction');
+  assert.equal(elements.get('#transaction-list').children[0].children[1].textContent, 'Coffee Shop');
+
+  keyword.value = 'not found';
+  keyword.listeners.input();
+  assert.equal(elements.get('#results-count').textContent, '0 transactions');
+  assert.equal(elements.get('#status-message').textContent, 'No transactions match these filters.');
+
+  elements.get('#reset-filters').click();
+  assert.equal(category.value, '');
+  assert.equal(keyword.value, '');
+  assert.equal(elements.get('#results-count').textContent, `${data.length} transactions`);
+  assert.equal(elements.get('#transaction-list').children.length, 5);
+  assert.equal(elements.get('#page-label').textContent, 'Page 1 of 2');
+});
+
+test('page restores a user history already saved in storage instead of reseeding it', () => {
+  const { document, elements, storage } = createHistoryDocument();
+  const saved = [{ id: 7, date: '2024-01-04', description: 'Saved lunch', category: 'Food', amount: -15 }];
+  storage.setItem('transaction-history:test-user', JSON.stringify(saved));
+
+  mountTransactionHistory(document, data);
+
+  assert.equal(elements.get('#results-count').textContent, '1 transaction');
+  assert.equal(elements.get('#transaction-list').children[0].children[1].textContent, 'Saved lunch');
+});
+
+test('page reports corrupted stored history and exposes retry', () => {
+  const { document, elements, storage } = createHistoryDocument();
+  storage.setItem('transaction-history:test-user', '{invalid json');
+
+  mountTransactionHistory(document, data);
+
+  assert.match(elements.get('#status-message').textContent, /Unable to load transaction history/);
+  assert.equal(elements.get('#retry-history').hidden, false);
+  assert.equal(elements.get('#transaction-list').children.length, 0);
 });
 
 test('reset clears every filter and returns to page one', () => {
@@ -101,6 +230,26 @@ test('repository upserts repeated transactions and updates supported details', (
   assert.equal(saved.length, 1);
   assert.equal(saved[0].status, 'posted');
   assert.equal(saved[0].description, 'Coffee Shop');
+});
+
+test('repository persists updates and removals across visits without changing another user history', () => {
+  const storage = createMemoryStorage();
+  const userA = createTransactionRepository({ storage, userId: 'user-a', initialTransactions: data });
+  const userB = createTransactionRepository({
+    storage,
+    userId: 'user-b',
+    initialTransactions: [{ id: 1, date: '2024-01-04', description: 'Private record', category: 'Personal', amount: -5 }]
+  });
+  userB.list();
+
+  userA.update(1, { description: 'Updated coffee', status: 'posted' });
+  userA.remove(2);
+
+  const nextVisitA = createTransactionRepository({ storage, userId: 'user-a' });
+  const nextVisitB = createTransactionRepository({ storage, userId: 'user-b' });
+  assert.equal(nextVisitA.list().find((item) => item.id === 1).description, 'Updated coffee');
+  assert.equal(nextVisitA.list().some((item) => item.id === 2), false);
+  assert.equal(nextVisitB.list()[0].description, 'Private record');
 });
 
 test('repository paginates in date order and clamps out-of-range pages', () => {
