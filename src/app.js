@@ -12,7 +12,12 @@ export const transactions = [
   { id: 9, date: '2024-05-25', description: 'Garden supply', category: 'Shopping', amount: -43.19 }
 ];
 
-export const emptyFilters = Object.freeze({ keyword: '', category: '', from: '', to: '' });
+export const emptyFilters = Object.freeze({
+  keyword: '',
+  category: '',
+  from: '',
+  to: ''
+});
 
 function isValidTransaction(item) {
   return item
@@ -122,51 +127,167 @@ export function hasActiveFilters(filters) {
   return Object.values(filters).some(Boolean);
 }
 
+export function transactionMatchesSearch(item, searchTerm) {
+  const keyword = searchTerm.trim().toLowerCase();
+
+  if (!keyword) {
+    return true;
+  }
+
+  const searchableText = [
+    item.date,
+    item.description,
+    item.category,
+    String(item.amount),
+    Math.abs(item.amount).toFixed(2)
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  return searchableText.includes(keyword);
+}
+
 export function filterTransactions(items, filters) {
-  const keyword = filters.keyword.trim().toLowerCase();
   return items.filter((item) => {
-    const matchesKeyword = !keyword
-      || `${item.description} ${item.category}`.toLowerCase().includes(keyword);
-    const matchesCategory = !filters.category || item.category === filters.category;
-    const matchesFrom = !filters.from || item.date >= filters.from;
-    const matchesTo = !filters.to || item.date <= filters.to;
-    return matchesKeyword && matchesCategory && matchesFrom && matchesTo;
+    const matchesKeyword = transactionMatchesSearch(
+      item,
+      filters.keyword
+    );
+
+    const matchesCategory =
+      !filters.category ||
+      item.category === filters.category;
+
+    const matchesFrom =
+      !filters.from ||
+      item.date >= filters.from;
+
+    const matchesTo =
+      !filters.to ||
+      item.date <= filters.to;
+
+    return (
+      matchesKeyword &&
+      matchesCategory &&
+      matchesFrom &&
+      matchesTo
+    );
   });
 }
 
 export function resetFilters(filters, page = 1) {
-  if (!hasActiveFilters(filters) && page === 1) return { filters, page, changed: false };
-  return { filters: { ...emptyFilters }, page: 1, changed: true };
+  if (!hasActiveFilters(filters) && page === 1) {
+    return {
+      filters,
+      page,
+      changed: false
+    };
+  }
+
+  return {
+    filters: { ...emptyFilters },
+    page: 1,
+    changed: true
+  };
 }
 
 export function createTransactionStore(items = transactions) {
-  let state = { filters: { ...emptyFilters }, page: 1, requestId: 0 };
+  let state = {
+    filters: { ...emptyFilters },
+    page: 1,
+    requestId: 0
+  };
+
   return {
     getState: () => state,
+
     setFilters(nextFilters) {
-      state = { ...state, filters: { ...state.filters, ...nextFilters }, page: 1, requestId: state.requestId + 1 };
+      state = {
+        ...state,
+        filters: {
+          ...state.filters,
+          ...nextFilters
+        },
+        page: 1,
+        requestId: state.requestId + 1
+      };
+
       return state;
     },
+
     reset() {
-      const result = resetFilters(state.filters, state.page);
-      if (!result.changed) return state;
-      state = { ...state, filters: result.filters, page: result.page, requestId: state.requestId + 1 };
+      const result = resetFilters(
+        state.filters,
+        state.page
+      );
+
+      if (!result.changed) {
+        return state;
+      }
+
+      state = {
+        ...state,
+        filters: result.filters,
+        page: result.page,
+        requestId: state.requestId + 1
+      };
+
       return state;
     },
+
     setPage(page) {
-      const pages = Math.max(1, Math.ceil(filterTransactions(items, state.filters).length / PAGE_SIZE));
-      state = { ...state, page: Math.min(Math.max(1, page), pages) };
+      const filtered = filterTransactions(
+        items,
+        state.filters
+      );
+
+      const pages = Math.max(
+        1,
+        Math.ceil(filtered.length / PAGE_SIZE)
+      );
+
+      state = {
+        ...state,
+        page: Math.min(
+          Math.max(1, page),
+          pages
+        )
+      };
+
       return state;
     },
+
     getVisibleTransactions() {
-      const filtered = filterTransactions(items, state.filters);
-      const start = (state.page - 1) * PAGE_SIZE;
-      return { items: filtered.slice(start, start + PAGE_SIZE), total: filtered.length, pages: Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)) };
+      const filtered = filterTransactions(
+        items,
+        state.filters
+      );
+
+      const start =
+        (state.page - 1) * PAGE_SIZE;
+
+      return {
+        items: filtered.slice(
+          start,
+          start + PAGE_SIZE
+        ),
+        total: filtered.length,
+        pages: Math.max(
+          1,
+          Math.ceil(filtered.length / PAGE_SIZE)
+        )
+      };
     },
+
     beginRequest() {
-      state = { ...state, requestId: state.requestId + 1 };
+      state = {
+        ...state,
+        requestId: state.requestId + 1
+      };
+
       return state.requestId;
     },
+
     acceptResponse(requestId) {
       return requestId === state.requestId;
     }
@@ -174,7 +295,13 @@ export function createTransactionStore(items = transactions) {
 }
 
 function formatAmount(amount) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+  return new Intl.NumberFormat(
+    'en-US',
+    {
+      style: 'currency',
+      currency: 'USD'
+    }
+  ).format(amount);
 }
 
 export function mountTransactionHistory(document, items = transactions) {
@@ -280,4 +407,6 @@ export function mountTransactionHistory(document, items = transactions) {
   return store;
 }
 
-if (typeof document !== 'undefined') mountTransactionHistory(document);
+if (typeof document !== 'undefined') {
+  mountTransactionHistory(document);
+}
