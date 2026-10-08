@@ -7,6 +7,9 @@ h1, h2 { margin: 0; }
 h1 { font-size: clamp(2rem, 5vw, 3rem); }
 h2 { font-size: 1.15rem; }
 .subtitle { color: #596579; margin: .5rem 0 2rem; }
+.transaction-panel { background: white; border: 1px solid #e1e6ef; border-radius: .75rem; padding: 1.25rem; margin-bottom: 1rem; }
+.transaction-panel h2 { margin-bottom: 1rem; }
+.transaction-form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(4, 1fr); margin-bottom: 1rem; }
 .filters-panel { background: white; border: 1px solid #e1e6ef; border-radius: .75rem; padding: 1.25rem; margin-bottom: 2rem; }
 .filters-heading, .results-heading { align-items: center; display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .filter-grid { display: grid; gap: 1rem; grid-template-columns: repeat(4, 1fr); }
@@ -27,5 +30,5 @@ td:last-child { text-align: right; }
 .debit { color: #a23b47; } .credit { color: #14724b; }
 .pagination { align-items: center; display: flex; gap: 1rem; justify-content: center; padding: 1.25rem 0; }
 .pagination span { color: #596579; font-size: .9rem; min-width: 6rem; text-align: center; }
-@media (max-width: 700px) { .page-shell { padding-top: 2rem; } .filter-grid { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 440px) { .filter-grid { grid-template-columns: 1fr; } .filters-heading { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 700px) { .page-shell { padding-top: 2rem; } .filter-grid, .transaction-form-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 440px) { .filter-grid, .transaction-form-grid { grid-template-columns: 1fr; } .filters-heading { align-items: flex-start; flex-direction: column; } }

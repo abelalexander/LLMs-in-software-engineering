@@ -14,6 +14,31 @@
         <p class="subtitle">Review and filter your recent account activity.</p>
       </header>
 
+      <section class="transaction-panel" aria-labelledby="transaction-heading">
+        <h2 id="transaction-heading">Add transaction</h2>
+        <form id="transaction-form">
+          <div class="transaction-form-grid">
+            <label>
+              Date
+              <input id="transaction-date" type="date" required>
+            </label>
+            <label>
+              Description
+              <input id="transaction-description" type="text" required>
+            </label>
+            <label>
+              Category
+              <input id="transaction-category" type="text" required>
+            </label>
+            <label>
+              Amount
+              <input id="transaction-amount" type="number" step="any" required>
+            </label>
+          </div>
+          <button type="submit">Add transaction</button>
+        </form>
+      </section>
+
       <section class="filters-panel" aria-labelledby="filters-heading">
         <div class="filters-heading">
           <h2 id="filters-heading">Filters</h2>
