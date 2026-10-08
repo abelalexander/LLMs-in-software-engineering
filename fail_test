@@ -1,0 +1,47 @@
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+import java.time.LocalDate;
+import java.util.List;
+
+public class DatabaseManagerTest {
+
+private DatabaseManager dbManager;
+
+@BeforeEach
+public void setUp() {
+    dbManager = new DatabaseManager();
+    // Simulating the "Store user transaction history" issue
+    dbManager.addTransaction(new Transaction("Coffee", 4.50, LocalDate.of(2026, 10, 1)));
+    dbManager.addTransaction(new Transaction("Groceries", 65.00, LocalDate.of(2026, 10, 5)));
+    dbManager.addTransaction(new Transaction("Concert Ticket", 45.00, LocalDate.of(2026, 10, 12)));
+}
+
+@Test
+public void testGetTransactionsByDateRange_ReturnsOnlyTransactionsWithinRange() {
+    // Arrange
+    LocalDate startDate = LocalDate.of(2026, 10, 2);
+    LocalDate endDate = LocalDate.of(2026, 10, 10);
+
+    // Act
+    List<Transaction> filteredTransactions = dbManager.getTransactionsByDateRange(startDate, endDate);
+
+    // Assert
+    assertNotNull(filteredTransactions, "Filtered transaction list should not be null");
+    assertEquals(1, filteredTransactions.size(), "Should return exactly 1 transaction within the specified date range");
+    assertEquals("Groceries", filteredTransactions.get(0).getDescription(), "The returned transaction should be 'Groceries'");
+}
+
+@Test
+public void testGetTransactionsByDateRange_ReturnsEmptyListWhenNoMatches() {
+    // Arrange
+    LocalDate startDate = LocalDate.of(2026, 11, 1);
+    LocalDate endDate = LocalDate.of(2026, 11, 30);
+
+    // Act
+    List<Transaction> filteredTransactions = dbManager.getTransactionsByDateRange(startDate, endDate);
+
+    // Assert
+    assertTrue(filteredTransactions.isEmpty(), "Should return an empty list when no transactions fall in the date range");
+}
+}
