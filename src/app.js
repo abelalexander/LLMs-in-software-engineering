@@ -19,6 +19,110 @@ export const emptyFilters = Object.freeze({
   to: ''
 });
 
+function isValidTransaction(item) {
+  return item
+    && (typeof item.id === 'string' || typeof item.id === 'number')
+    && String(item.id).length > 0
+    && typeof item.date === 'string'
+    && !Number.isNaN(Date.parse(item.date))
+    && typeof item.description === 'string'
+    && typeof item.category === 'string'
+    && Number.isFinite(item.amount)
+    && (item.status === undefined || typeof item.status === 'string');
+}
+
+function sortTransactions(items) {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const dateOrder = right.item.date.localeCompare(left.item.date);
+      return dateOrder || left.index - right.index;
+    })
+    .map(({ item }) => item);
+}
+
+export function createTransactionRepository({ storage, userId, initialTransactions = [] }) {
+  if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
+    throw new TypeError('A persistent storage adapter is required.');
+  }
+  if (typeof userId !== 'string' || !userId.trim()) {
+    throw new TypeError('A user ID is required to access transaction history.');
+  }
+
+  const key = `transaction-history:${encodeURIComponent(userId.trim())}`;
+
+  function read() {
+    const saved = storage.getItem(key);
+    if (saved === null) {
+      if (!initialTransactions.every(isValidTransaction)) {
+        throw new TypeError('Initial transaction history contains invalid records.');
+      }
+      const seed = sortTransactions(initialTransactions);
+      storage.setItem(key, JSON.stringify(seed));
+      return seed;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(saved);
+    } catch {
+      throw new Error('Stored transaction history is invalid and could not be loaded.');
+    }
+    if (!Array.isArray(parsed)) {
+      throw new Error('Stored transaction history has an unsupported format.');
+    }
+    return sortTransactions(parsed.filter(isValidTransaction));
+  }
+
+  function write(items) {
+    storage.setItem(key, JSON.stringify(sortTransactions(items)));
+  }
+
+  return {
+    list: read,
+    getPage(page = 1, pageSize = PAGE_SIZE) {
+      if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1) {
+        throw new RangeError('Page and page size must be positive integers.');
+      }
+      const items = read();
+      const pages = Math.max(1, Math.ceil(items.length / pageSize));
+      const currentPage = Math.min(page, pages);
+      const start = (currentPage - 1) * pageSize;
+      return { items: items.slice(start, start + pageSize), total: items.length, pages, page: currentPage };
+    },
+    save(transaction) {
+      if (!isValidTransaction(transaction)) {
+        throw new TypeError('Transaction is missing valid history details.');
+      }
+      const items = read();
+      const existingIndex = items.findIndex((item) => String(item.id) === String(transaction.id));
+      let saved;
+      if (existingIndex === -1) items.push({ ...transaction });
+      else items[existingIndex] = { ...items[existingIndex], ...transaction };
+      saved = existingIndex === -1 ? { ...transaction } : items[existingIndex];
+      write(items);
+      return { ...saved };
+    },
+    update(id, changes) {
+      const items = read();
+      const existing = items.find((item) => String(item.id) === String(id));
+      if (!existing) throw new Error(`Transaction ${id} was not found.`);
+      const updated = { ...existing, ...changes, id: existing.id };
+      if (!isValidTransaction(updated)) {
+        throw new TypeError('Transaction update contains invalid history details.');
+      }
+      write(items.map((item) => String(item.id) === String(id) ? updated : item));
+      return updated;
+    },
+    remove(id) {
+      const items = read();
+      const remaining = items.filter((item) => String(item.id) !== String(id));
+      if (remaining.length !== items.length) write(remaining);
+      return remaining.length !== items.length;
+    }
+  };
+}
+
 export function hasActiveFilters(filters) {
   return Object.values(filters).some(Boolean);
 }
@@ -200,187 +304,106 @@ function formatAmount(amount) {
   ).format(amount);
 }
 
-export function mountTransactionHistory(
-  document,
-  items = transactions
-) {
-  const store = createTransactionStore(items);
+export function mountTransactionHistory(document, items = transactions) {
+  const userId = document.querySelector('main')?.dataset.userId;
+  let repository;
+  let store;
+  const keyword = document.querySelector('#keyword-filter');
+  const category = document.querySelector('#category-filter');
+  const from = document.querySelector('#from-filter');
+  const to = document.querySelector('#to-filter');
+  const reset = document.querySelector('#reset-filters');
+  const list = document.querySelector('#transaction-list');
+  const count = document.querySelector('#results-count');
+  const status = document.querySelector('#status-message');
+  const pageLabel = document.querySelector('#page-label');
+  const previous = document.querySelector('#previous-page');
+  const next = document.querySelector('#next-page');
+  const retry = document.querySelector('#retry-history');
 
-  const keyword =
-    document.querySelector('#keyword-filter');
-
-  const category =
-    document.querySelector('#category-filter');
-
-  const from =
-    document.querySelector('#from-filter');
-
-  const to =
-    document.querySelector('#to-filter');
-
-  const reset =
-    document.querySelector('#reset-filters');
-
-  const list =
-    document.querySelector('#transaction-list');
-
-  const count =
-    document.querySelector('#results-count');
-
-  const status =
-    document.querySelector('#status-message');
-
-  const pageLabel =
-    document.querySelector('#page-label');
-
-  const previous =
-    document.querySelector('#previous-page');
-
-  const next =
-    document.querySelector('#next-page');
-
-  const categories = [
-    ...new Set(
-      items.map(
-        (item) => item.category
-      )
-    )
-  ].sort();
-
-  categories.forEach((value) => {
-    const option =
-      document.createElement('option');
-
-    option.value = value;
-    option.textContent = value;
-
-    category.append(option);
-  });
+  function loadHistory() {
+    status.textContent = 'Loading transaction history…';
+    retry.hidden = true;
+    try {
+      repository ||= createTransactionRepository({
+        storage: document.defaultView.localStorage,
+        userId,
+        initialTransactions: items
+      });
+      const history = repository.list();
+      store = createTransactionStore(history);
+      category.replaceChildren();
+      const allCategories = document.createElement('option');
+      allCategories.value = '';
+      allCategories.textContent = 'All categories';
+      category.append(allCategories);
+      [...new Set(history.map((item) => item.category))].sort().forEach((value) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        category.append(option);
+      });
+      render();
+    } catch (error) {
+      store = null;
+      status.textContent = error instanceof Error
+        ? `Unable to load transaction history: ${error.message}`
+        : 'Unable to load transaction history.';
+      count.textContent = '0 transactions';
+      list.replaceChildren();
+      pageLabel.textContent = 'Page 1 of 1';
+      previous.disabled = true;
+      next.disabled = true;
+      reset.hidden = true;
+      retry.hidden = false;
+    }
+  }
 
   function render() {
+    if (!store) return;
     const state = store.getState();
-
-    const result =
-      store.getVisibleTransactions();
-
-    reset.hidden =
-      !hasActiveFilters(state.filters);
-
-    count.textContent =
-      `${result.total} transaction${
-        result.total === 1 ? '' : 's'
-      }`;
-
-    status.textContent =
-      result.total
-        ? ''
-        : 'No transactions match your search.';
-
-    const rows = result.items.map(
-      (item) => {
-        const row =
-          document.createElement('tr');
-
-        row.innerHTML = `
-          <td>${item.date}</td>
-          <td>${item.description}</td>
-          <td>${item.category}</td>
-          <td class="${
-            item.amount < 0
-              ? 'debit'
-              : 'credit'
-          }">
-            ${formatAmount(item.amount)}
-          </td>
-        `;
-
-        return row;
-      }
-    );
-
-    list.replaceChildren(...rows);
-
-    pageLabel.textContent =
-      `Page ${state.page} of ${result.pages}`;
-
-    previous.disabled =
-      state.page === 1;
-
-    next.disabled =
-      state.page >= result.pages;
+    const result = store.getVisibleTransactions();
+    reset.hidden = !hasActiveFilters(state.filters);
+    count.textContent = `${result.total} transaction${result.total === 1 ? '' : 's'}`;
+    status.textContent = result.total
+      ? ''
+      : hasActiveFilters(state.filters) ? 'No transactions match these filters.' : 'No transactions yet.';
+    list.replaceChildren(...result.items.map((item) => {
+      const row = document.createElement('tr');
+      const values = [item.date, item.description, item.category, item.status || '—', formatAmount(item.amount)];
+      values.forEach((value, index) => {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        if (index === 4) cell.className = item.amount < 0 ? 'debit' : 'credit';
+        row.append(cell);
+      });
+      return row;
+    }));
+    pageLabel.textContent = `Page ${state.page} of ${result.pages}`;
+    previous.disabled = state.page === 1;
+    next.disabled = state.page >= result.pages;
   }
 
   function update() {
-    store.setFilters({
-      keyword: keyword.value,
-      category: category.value,
-      from: from.value,
-      to: to.value
-    });
-
+    if (!store) return;
+    store.setFilters({ keyword: keyword.value, category: category.value, from: from.value, to: to.value });
     render();
   }
-
-  keyword.addEventListener(
-    'input',
-    update
-  );
-
-  category.addEventListener(
-    'input',
-    update
-  );
-
-  from.addEventListener(
-    'input',
-    update
-  );
-
-  to.addEventListener(
-    'input',
-    update
-  );
-
-  reset.addEventListener(
-    'click',
-    () => {
-      store.reset();
-
-      keyword.value = '';
-      category.value = '';
-      from.value = '';
-      to.value = '';
-
-      render();
-
-      keyword.focus();
-    }
-  );
-
-  previous.addEventListener(
-    'click',
-    () => {
-      store.setPage(
-        store.getState().page - 1
-      );
-
-      render();
-    }
-  );
-
-  next.addEventListener(
-    'click',
-    () => {
-      store.setPage(
-        store.getState().page + 1
-      );
-
-      render();
-    }
-  );
-
-  render();
-
+  [keyword, category, from, to].forEach((control) => control.addEventListener('input', update));
+  reset.addEventListener('click', () => {
+    if (!store) return;
+    store.reset();
+    keyword.value = '';
+    category.value = '';
+    from.value = '';
+    to.value = '';
+    render();
+    keyword.focus();
+  });
+  previous.addEventListener('click', () => { if (store) { store.setPage(store.getState().page - 1); render(); } });
+  next.addEventListener('click', () => { if (store) { store.setPage(store.getState().page + 1); render(); } });
+  retry.addEventListener('click', loadHistory);
+  loadHistory();
   return store;
 }
 

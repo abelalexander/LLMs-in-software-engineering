@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="src/styles.css">
   </head>
   <body>
-    <main class="page-shell">
+    <main class="page-shell" data-user-id="demo-user">
       <header class="page-heading">
         <p class="eyebrow">Personal finances</p>
         <h1>Transaction history</h1>
@@ -49,10 +49,11 @@
           <p id="results-count" class="results-count" aria-live="polite"></p>
         </div>
         <p id="status-message" class="status-message" role="status"></p>
+        <button id="retry-history" type="button" hidden>Retry loading history</button>
         <div class="table-wrapper">
           <table>
             <thead>
-              <tr><th scope="col">Date</th><th scope="col">Description</th><th scope="col">Category</th><th scope="col">Amount</th></tr>
+              <tr><th scope="col">Date</th><th scope="col">Description</th><th scope="col">Category</th><th scope="col">Status</th><th scope="col">Amount</th></tr>
             </thead>
             <tbody id="transaction-list"></tbody>
           </table>
